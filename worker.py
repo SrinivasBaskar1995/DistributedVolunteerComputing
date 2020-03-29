@@ -27,7 +27,6 @@ class client:
     fps = 10
     frame_buffer = []
     connect_to_port = None
-    last_frame=-1
     
     def __init__(self):
         self.continue_procesing = True
@@ -64,7 +63,6 @@ class client:
         self.out = cv2.VideoWriter(self.path_out,cv2.VideoWriter_fourcc(*'XVID'), 30, (400,300))
         self.path_out_num+=1
         self.curr_frame=0
-        self.last_frame=-1
         rpiName = self.my_ip
         #vs = VideoStream(src=0).start()
         vs = cv2.VideoCapture(0)
@@ -74,16 +72,14 @@ class client:
         
         while self.continue_requesting:
             ret, frame = vs.read()
-            print("sending",rpiName+"||request||"+str(frame_number))
+            #print("sending",rpiName+"||request||"+str(frame_number))
             if self.sender!=None:
                 self.sender.send_image(rpiName+"||request||"+str(frame_number), frame)
             else:
                 print("sender is None")
             frame_number+=1
             
-        self.last_frame = frame_number-1
-            
-        print("done.")
+        #print("done.")
         vs.release()
         
     def worker(self):
@@ -111,8 +107,6 @@ class client:
         ACTIVE_CHECK_PERIOD = 10
         ACTIVE_CHECK_SECONDS = ESTIMATED_NUM_PIS * ACTIVE_CHECK_PERIOD
         
-        mW = args["montageW"]
-        mH = args["montageH"]
         print("[INFO] detecting: {}...".format(", ".join(obj for obj in
         	CONSIDER)))
         #it=0
@@ -122,7 +116,6 @@ class client:
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
-            print(info)
             if command=="processed":                
                 if rpiName!=self.my_ip:
                     print("frame not mine.")
@@ -130,8 +123,6 @@ class client:
                     if frame_number == self.curr_frame+1:
                         self.out.write(frame)
                         self.curr_frame+=1
-                        if self.last_frame==frame_number:
-                            self.out.release()
                     elif frame_number>self.curr_frame:
                         self.frame_buffer.append((frame_number,frame))
                         
@@ -141,8 +132,6 @@ class client:
                             if number == self.curr_frame+1:
                                 self.out.write(frame_i)
                                 self.curr_frame+=1
-                                if self.last_frame==number:
-                                    self.out.release()
                                 self.frame_buffer.remove((number,frame_i))
                                 written = True
                         if not written:
@@ -244,6 +233,8 @@ class client:
                 if data=="ok":
                     break
         self.continue_requesting = False
+        if self.out!=None:
+            self.out.release()
         
     def exit_threads(self):
         i=0
