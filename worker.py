@@ -31,6 +31,8 @@ class client:
     
     send_buffer = []
     
+    start_time = 0
+    
     def __init__(self):        
         i=0
         while True:
@@ -80,6 +82,8 @@ class client:
         
         self.send_buffer = []
         
+        self.start_time = time.time()
+        
         ret, frame = vs.read()
         width=400
         height=int((frame.shape[0]*width)/frame.shape[1])
@@ -99,6 +103,8 @@ class client:
             ret, frame = vs.read()
             
         #print("done.")
+        if not ret:
+            self.stop_requesting_thread()
         self.final_sent_frame=frame_number-1
         vs.release()
         
@@ -141,7 +147,7 @@ class client:
         while self.continue_procesing:
             (info, frame) = imageHub.recv_image()
             #imageHub.send_reply(b'OK')
-            print("\n"+info)
+            #print("\n"+info)
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
@@ -150,9 +156,11 @@ class client:
                     print("frame not mine.")
                 else:
                     if frame_number == self.curr_frame+1:
+                        print(frame_number)
                         self.out.write(frame)
                         self.curr_frame+=1
                         if self.final_sent_frame==frame_number:
+                            print("time taken for the job = ",time.time()-self.start_time)
                             if self.out!=None:
                                 self.out.release()
                     elif frame_number>self.curr_frame:
@@ -162,10 +170,12 @@ class client:
                         written = False
                         for (number,frame_i) in self.frame_buffer:
                             if number == self.curr_frame+1:
+                                print(number)
                                 self.out.write(frame_i)
                                 self.curr_frame+=1
                                 self.frame_buffer.remove((number,frame_i))
                                 if self.final_sent_frame==number:
+                                    print("time taken for the job = ",time.time()-self.start_time)
                                     if self.out!=None:
                                         self.out.release()
                                 written = True

@@ -6,6 +6,8 @@ import socket
 
 class coordinator:
     
+    my_ip = 'localhost:9999'
+    
     continue_server = {}
     continue_listening = False
     continue_send_reply = {}
@@ -41,7 +43,7 @@ class coordinator:
         
         while port in self.continue_server.keys() and self.continue_server[port]:
             (info, frame) = imageHub.recv_image()
-            print("\n"+info)
+            #print("\n"+info)
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
@@ -88,66 +90,67 @@ class coordinator:
         
     def manager(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        my_ip = 'localhost'
-        my_port = 9999
         
-        server_address = (my_ip, my_port)
+        server_address = ('', int(self.my_ip.split(":")[1]))
         print('\nlistening on %s port %s' % server_address)
         sock.bind(server_address)
+        sock.settimeout(2)
         while self.continue_listening:
-            message, client_address = sock.recvfrom(4096)
-            message = message.decode('utf-8')
-            if "join" in message:
-                address = message.split("||")[1]
-                #print("tcp://"+address.split(":")[0]+":"+address.split(":")[1])
-                self.clients.append(address)
-                available_port = self.my_ports[0]
-                self.port_to_client[address] = available_port
-                self.my_ports.pop(0)
-                print("pub to : "+"tcp://*"+":"+str(available_port))
-                sender = imagezmq.ImageSender(connect_to="tcp://*"+":"+str(available_port),REQ_REP=False)
-                self.senders[address] = sender
-                self.continue_server[address.split(":")[1]] = True
-                processing = threading.Thread(target=self.server,args=[address.split(":")[0],address.split(":")[1]])
-                processing.start()
-                sock.sendto(("ok||"+str(available_port)).encode('utf-8'),client_address)
-                
-            elif "request" in message:
-                address = message.split("||")[1]
-                self.clients.remove(address)
-                self.client_result[address] = []
-                if address not in self.continue_send_reply.keys() or not self.continue_send_reply[address]:
-                    self.continue_send_reply[address]= True
-                    processing = threading.Thread(target=self.send_reply,args=[address])
+            try:
+                message, client_address = sock.recvfrom(4096)
+                message = message.decode('utf-8')
+                if "join" in message:
+                    address = message.split("||")[1]
+                    #print("tcp://"+address.split(":")[0]+":"+address.split(":")[1])
+                    self.clients.append(address)
+                    available_port = self.my_ports[0]
+                    self.port_to_client[address] = available_port
+                    self.my_ports.pop(0)
+                    print("pub to : "+"tcp://*"+":"+str(available_port))
+                    sender = imagezmq.ImageSender(connect_to="tcp://*"+":"+str(available_port),REQ_REP=False)
+                    self.senders[address] = sender
+                    self.continue_server[address.split(":")[1]] = True
+                    processing = threading.Thread(target=self.server,args=[address.split(":")[0],address.split(":")[1]])
                     processing.start()
-                sock.sendto("ok".encode('utf-8'),client_address)
-                
-            elif "stop" in message:
-                address = message.split("||")[1]
-                self.clients.append(address)
-                #self.continue_send_reply.pop(address,None)
-                sock.sendto("ok".encode('utf-8'),client_address)
-                
-            elif "end" in message:
-                address = message.split("||")[1]
-                port = self.port_to_client[address]
-                del self.port_to_client[address]
-                self.continue_server.pop(port,None)
-                self.my_ports.append(port)
-                if address in self.continue_send_reply.keys():
-                    self.continue_send_reply.pop(address,None)
-                if address in self.clients:
+                    sock.sendto(("ok||"+str(available_port)).encode('utf-8'),client_address)
+                    
+                elif "request" in message:
+                    address = message.split("||")[1]
                     self.clients.remove(address)
-                if address in self.senders.keys():
-                    #self.senders[address].close_socket()
-                    del self.senders[address]
-                sock.sendto("ok".encode('utf-8'),client_address)
+                    self.client_result[address] = []
+                    if address not in self.continue_send_reply.keys() or not self.continue_send_reply[address]:
+                        self.continue_send_reply[address]= True
+                        processing = threading.Thread(target=self.send_reply,args=[address])
+                        processing.start()
+                    sock.sendto("ok".encode('utf-8'),client_address)
+                    
+                elif "stop" in message:
+                    address = message.split("||")[1]
+                    self.clients.append(address)
+                    #self.continue_send_reply.pop(address,None)
+                    sock.sendto("ok".encode('utf-8'),client_address)
+                    
+                elif "end" in message:
+                    address = message.split("||")[1]
+                    port = self.port_to_client[address]
+                    del self.port_to_client[address]
+                    self.continue_server.pop(port,None)
+                    self.my_ports.append(port)
+                    if address in self.continue_send_reply.keys():
+                        self.continue_send_reply.pop(address,None)
+                    if address in self.clients:
+                        self.clients.remove(address)
+                    if address in self.senders.keys():
+                        #self.senders[address].close_socket()
+                        del self.senders[address]
+                    sock.sendto("ok".encode('utf-8'),client_address)
+            except socket.timeout:
+                continue
         
         sock.close()
             
     def exit_threads(self):
         self.continue_server = {}
-        self.continue_server = False
         self.continue_listening = False
             
 if __name__=='__main__':
