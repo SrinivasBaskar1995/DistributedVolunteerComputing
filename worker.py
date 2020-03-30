@@ -101,7 +101,7 @@ class client:
                 print("sender is None")
             frame_number+=1
             ret, frame = vs.read()
-            time.sleep(0.07)
+            time.sleep(0.05)
             
         #print("done.")
         if not ret:
@@ -157,7 +157,7 @@ class client:
                     print("frame not mine.")
                 else:
                     if frame_number == self.curr_frame+1:
-                        print(frame_number)
+                        #print(frame_number)
                         self.out.write(frame)
                         self.curr_frame+=1
                         if self.final_sent_frame==frame_number:
@@ -171,7 +171,7 @@ class client:
                         written = False
                         for (number,frame_i) in self.frame_buffer:
                             if number == self.curr_frame+1:
-                                print(number)
+                                #print(number)
                                 self.out.write(frame_i)
                                 self.curr_frame+=1
                                 self.frame_buffer.remove((number,frame_i))

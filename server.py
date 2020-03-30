@@ -3,6 +3,7 @@ from datetime import datetime
 import imagezmq
 import threading
 import socket
+import time
 
 class coordinator:
     
@@ -10,6 +11,7 @@ class coordinator:
     
     continue_server = {}
     continue_listening = False
+    continue_send_request = False
     continue_send_reply = {}
     
     my_ports = [x for x in range(5555,5600)]
@@ -18,6 +20,7 @@ class coordinator:
     clients = []
     client_result = {}
     port_to_client = {}
+    requests = []
     
     req_rep = False
     
@@ -25,6 +28,10 @@ class coordinator:
         self.continue_listening = True
         client_manager = threading.Thread(target=self.manager)
         client_manager.start()
+        
+        self.continue_send_request = True
+        request_thread = threading.Thread(target=self.send_request)
+        request_thread.start()
         
     def server(self,ip,port):
         print('sub to : '+ip+':'+port)
@@ -39,11 +46,11 @@ class coordinator:
         ACTIVE_CHECK_PERIOD = 10
         ACTIVE_CHECK_SECONDS = ESTIMATED_NUM_PIS * ACTIVE_CHECK_PERIOD
         
-        iterations=0
+        #iterations=0
         
         while port in self.continue_server.keys() and self.continue_server[port]:
             (info, frame) = imageHub.recv_image()
-            #print("\n"+info)
+            
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
@@ -68,12 +75,14 @@ class coordinator:
                 lastActiveCheck = datetime.now()
             
             if command=="request":
-                if len(self.clients)>0:
-                    #print("sending to.",self.clients[iterations%len(self.clients)])
-                    if self.clients[iterations%len(self.clients)]==rpiName:
-                        iterations+=1
-                    self.senders[self.clients[iterations%len(self.clients)]].send_image(info, frame)
-                    iterations+=1
+                #print("\n"+info)
+                self.requests.append((info, frame))
+                #if len(self.clients)>0:
+                #    print("sending to.",self.clients[iterations%len(self.clients)])
+                #    if self.clients[iterations%len(self.clients)]==rpiName:
+                #        iterations+=1
+                #    self.senders[self.clients[iterations%len(self.clients)]].send_image(info, frame)
+                #    iterations+=1
             elif command=="processed":
                 self.client_result[rpiName].append((info, frame))
         
@@ -87,6 +96,27 @@ class coordinator:
                 info, frame = self.client_result[rpiName][0]
                 self.client_result[rpiName].pop(0)
                 self.senders[rpiName].send_image(info, frame)
+				time.sleep(0.05)
+                
+    def send_request(self):
+        iterations=0
+        while self.continue_send_request:
+            if len(self.requests)>0:
+                info,frame = self.requests[0]
+                self.requests.pop(0)
+                rpiName = info.split("||")[0]
+                clients = []
+                for client in self.clients:
+                    if client!=rpiName:
+                        clients.append(client)
+                if iterations%len(clients)==0:
+                    time.sleep(0.08)
+                if len(clients)>0:
+                    #print("sending to.",self.clients[iterations%len(self.clients)])
+                    #if self.clients[iterations%len(self.clients)]==rpiName:
+                    #    iterations+=1
+                    self.senders[clients[iterations%len(clients)]].send_image(info, frame)
+                    iterations+=1
         
     def manager(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -152,6 +182,7 @@ class coordinator:
     def exit_threads(self):
         self.continue_server = {}
         self.continue_listening = False
+        self.continue_send_request = False
             
 if __name__=='__main__':
     c = coordinator()
