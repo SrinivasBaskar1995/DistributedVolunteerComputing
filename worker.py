@@ -88,7 +88,7 @@ class client:
         width=400
         height=int((frame.shape[0]*width)/frame.shape[1])
         
-        self.out = cv2.VideoWriter(self.path_out,cv2.VideoWriter_fourcc(*'XVID'), 30, (width,height))
+        self.out = cv2.VideoWriter(self.path_out,cv2.VideoWriter_fourcc(*'mp4v'), 30, (width,height))
         
         ret, frame = vs.read()
         
@@ -101,6 +101,7 @@ class client:
                 print("sender is None")
             frame_number+=1
             ret, frame = vs.read()
+            time.sleep(0.07)
             
         #print("done.")
         if not ret:
