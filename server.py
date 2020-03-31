@@ -6,9 +6,9 @@ import sys
 
 class coordinator:
     
-    req_rep = False
+    req_rep = True
     my_ip = 'localhost:9999'
-    
+    max_buffer = 4000
     continue_server = {}
     continue_listening = False
     continue_send_request = False
@@ -46,8 +46,12 @@ class coordinator:
             command = info.split("||")[1]
             
             if command=="request":
+                while self.req_rep and len(self.requests)>self.max_buffer:
+                    time.sleep(0.1)
                 self.requests.append((info, frame))
             elif command=="processed":
+                while self.req_rep and len(self.client_result)>self.max_buffer:
+                    time.sleep(0.1)
                 self.client_result[rpiName].append((info, frame))
             if self.req_rep:
                 imageHub.send_reply(b'OK')
@@ -61,7 +65,7 @@ class coordinator:
                 info, frame = self.client_result[rpiName][0]
                 self.client_result[rpiName].pop(0)
                 self.senders[rpiName].send_image(info, frame)
-                time.sleep(0.05)
+                #time.sleep(0.05)
                 
     def send_request(self):
         iterations=0
@@ -74,8 +78,8 @@ class coordinator:
                 for client in self.clients:
                     if client!=rpiName:
                         clients.append(client)
-                if iterations%len(clients)==0:
-                    time.sleep(0.8)
+                #if iterations%len(clients)==0:
+                    #time.sleep(0.8)
                 if len(clients)>0:
                     self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                     iterations+=1

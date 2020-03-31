@@ -12,8 +12,9 @@ import sys
 
 class client:
     
-    req_rep = False
-    number_of_frames_in_chunck = 10
+    req_rep = True
+    number_of_frames_in_chunk = 100
+    max_buffer = 4000
     continue_requesting = False
     continue_procesing = False
     continue_sending = False
@@ -110,19 +111,20 @@ class client:
             self.send_buffer.append((rpiName+"||request||"+str(frame_number), frame))
             frame_number+=1
             ret, frame = vs.read()
-            while len(self.send_buffer)>4000:
+            while len(self.send_buffer)>self.max_buffer:
                 time.sleep(0.1)
+            time.sleep(0.02)
             
         if not ret:
             self.stop_requesting_thread()
         self.final_sent_frame=frame_number-1
-        self.final_sent_frame-=self.final_sent_frame%10
+        self.final_sent_frame-=self.final_sent_frame%self.number_of_frames_in_chunk
         print("final frame sent : "+str(self.final_sent_frame)+"\n")
         vs.release()
         
     def send_image_thread(self):
         while self.continue_sending:
-            if len(self.send_buffer)>=self.number_of_frames_in_chunck:
+            if len(self.send_buffer)>=self.number_of_frames_in_chunk:
                 msg,frame = self.send_buffer[0]
                 parts = msg.split("||")
                 new_msg = parts[0]+"||"+parts[1]+"||"
@@ -130,9 +132,9 @@ class client:
                 width = frame.shape[1]
                 command = parts[1]
                 rpiName = parts[0]
-                dst = Image.new('RGB', (self.number_of_frames_in_chunck*width, height))
+                dst = Image.new('RGB', (self.number_of_frames_in_chunk*width, height))
                 index=0
-                for i in range(self.number_of_frames_in_chunck):
+                for i in range(self.number_of_frames_in_chunk):
                     if index>=len(self.send_buffer):
                         break
                     msg,frame = self.send_buffer[index]
@@ -145,8 +147,8 @@ class client:
                         index+=1
                 new_msg = new_msg[:len(new_msg)-1]
                 new_msg+="||"+str(height)+"||"+str(width)
-                chunck = np.asarray(dst)
-                self.sender.send_image(new_msg,chunck)
+                chunk = np.asarray(dst)
+                self.sender.send_image(new_msg,chunk)
                 time.sleep(0.05)
         #self.sender.close_socket()
                 
@@ -158,6 +160,8 @@ class client:
             print('receiving at : '+'tcp://'+self.server_address[0]+':'+self.connect_to_port)
             imageHub = imagezmq.ImageHub(open_port='tcp://'+self.server_address[0]+':'+self.connect_to_port,REQ_REP=False)
         while self.continue_receiving:
+            while self.req_rep and len(self.recv_buffer)>self.max_buffer:
+                time.sleep(0.1)
             (info, frame) = imageHub.recv_image()
             data = info.split("||")
             frames = data[2].split("-")
@@ -278,6 +282,8 @@ class client:
             	
                 #frameDict[rpiName] = frame
             	
+                while self.req_rep and len(self.send_buffer)>self.max_buffer:
+                    time.sleep(0.1)
                 self.send_buffer.append((rpiName+"||processed||"+str(frame_number), frame))
                 
                 if (datetime.now() - lastActiveCheck).seconds > ACTIVE_CHECK_SECONDS:
