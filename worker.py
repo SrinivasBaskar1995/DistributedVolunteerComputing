@@ -1,4 +1,3 @@
-from imutils import build_montages
 from datetime import datetime
 import numpy as np
 import imagezmq
@@ -8,13 +7,15 @@ import socket
 import select
 import time
 import threading
+from PIL import Image
 
 class client:
     
-    req_rep = False
+    number_of_frames_in_chunck = 10
     continue_requesting = False
     continue_procesing = False
     continue_sending = False
+    continue_receiving = False
     send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_address = ('localhost', 9999)
     my_ip = 'localhost:5554'
@@ -30,6 +31,7 @@ class client:
     final_sent_frame = 0
     
     send_buffer = []
+    recv_buffer = []
     
     start_time = 0
     
@@ -47,17 +49,21 @@ class client:
                 data = data.decode('utf-8')
                 if "ok" in data:
                     self.connect_to_port = data.split("||")[1]
-                    print("pub to : "+"tcp://*"+":"+self.my_ip.split(":")[1])
-                    self.sender = imagezmq.ImageSender(connect_to="tcp://*"+":"+self.my_ip.split(":")[1],REQ_REP=False)
+                    print("sending to : "+"tcp://*"+":"+self.my_ip.split(":")[1])
+                    self.sender = imagezmq.ImageSender(connect_to="tcp://"+self.server_address[0]+":"+self.connect_to_port)
                     break
                 
         self.continue_procesing = True
         processing = threading.Thread(target=self.worker)
         processing.start()
         
-        #self.continue_sending = True
-        #send_image_thread = threading.Thread(target=self.send_image)
-        #send_image_thread.start()
+        self.continue_sending = True
+        send_image_thread = threading.Thread(target=self.send_image_thread)
+        send_image_thread.start()
+        
+        self.continue_receiving = True
+        recv_image_thread = threading.Thread(target=self.recv_image_thread)
+        recv_image_thread.start()
 
     def requester(self,path):
         
@@ -70,8 +76,8 @@ class client:
         self.path_out_num+=1
         self.curr_frame=0
         rpiName = self.my_ip
-        #vs = VideoStream(src=0).start()
-        print(path)
+        self.final_sent_frame = 0
+        
         if path=="live":
             vs = cv2.VideoCapture(0)
         else:
@@ -87,40 +93,70 @@ class client:
         ret, frame = vs.read()
         width=400
         height=int((frame.shape[0]*width)/frame.shape[1])
-        
         self.out = cv2.VideoWriter(self.path_out,cv2.VideoWriter_fourcc(*'mp4v'), 30, (width,height))
         
         ret, frame = vs.read()
         
         while self.continue_requesting and ret:
-            #print("sending",rpiName+"||request||"+str(frame_number))
-            if self.sender!=None:
-                self.sender.send_image(rpiName+"||request||"+str(frame_number), frame)
-                #self.send_buffer.append((rpiName+"||request||"+str(frame_number), frame))
-            else:
-                print("sender is None")
+            self.send_buffer.append((rpiName+"||request||"+str(frame_number), frame))
             frame_number+=1
             ret, frame = vs.read()
-            time.sleep(0.05)
+            while len(self.send_buffer)>4000:
+                time.sleep(0.1)
             
-        #print("done.")
         if not ret:
             self.stop_requesting_thread()
         self.final_sent_frame=frame_number-1
+        print("final frame sent : "+str(self.final_sent_frame)+"\n")
         vs.release()
         
-    def send_image(self):
+    def send_image_thread(self):
         while self.continue_sending:
-            if len(self.send_buffer)>0:
+            if len(self.send_buffer)>0:#=self.number_of_frames_in_chunck:
                 msg,frame = self.send_buffer[0]
-                self.sender.send_image(msg,frame)
-                self.send_buffer.pop(0)
-                #time.sleep(0.2)
+                parts = msg.split("||")
+                new_msg = parts[0]+"||"+parts[1]+"||"
+                height = frame.shape[0]
+                width = frame.shape[1]
+                command = parts[1]
+                rpiName = parts[0]
+                dst = Image.new('RGB', (self.number_of_frames_in_chunck*width, height))
+                index=0
+                for i in range(self.number_of_frames_in_chunck):
+                    if index>=len(self.send_buffer):
+                        break
+                    msg,frame = self.send_buffer[index]
+                    if msg.split("||")[0]==rpiName and msg.split("||")[1]==command and frame.shape[0]==height and frame.shape[1]==width:
+                        new_msg+=msg.split("||")[2]+"-"
+                        im_pil = Image.fromarray(frame)
+                        dst.paste(im_pil, (i*width, 0))
+                        self.send_buffer.pop(index)
+                    else:
+                        index+=1
+                new_msg = new_msg[:len(new_msg)-1]
+                new_msg+="||"+str(height)+"||"+str(width)
+                chunck = np.asarray(dst)
+                self.sender.send_image(new_msg,chunck)
+                time.sleep(1)
+        #self.sender.close_socket()
+                
+    def recv_image_thread(self):
+        print('receiving at : '+'tcp://'+self.server_address[0]+':'+self.connect_to_port)
+        imageHub = imagezmq.ImageHub(open_port='tcp://*'+':'+self.my_ip.split(":")[1])
+        while self.continue_receiving:
+            (info, frame) = imageHub.recv_image()
+            data = info.split("||")
+            frames = data[2].split("-")
+            for i in range(len(frames)):
+                crop_img = frame[0:int(data[3]), i*int(data[4]):(i+1)*int(data[4])]
+                new_info = data[0]+"||"+data[1]+"||"+frames[i]
+                self.recv_buffer.append((new_info, crop_img))
+            imageHub.send_reply(b'OK')
+        #imageHub.close_socket()
+        del imageHub
         
     def worker(self):
         args = {"prototxt":"MobileNetSSD_deploy.prototxt.txt","model":"MobileNetSSD_deploy.caffemodel","montageW":2,"montageH":2,"confidence":0.2}
-        print('sub to : '+self.server_address[0]+':'+self.connect_to_port)
-        imageHub = imagezmq.ImageHub(open_port='tcp://'+self.server_address[0]+':'+self.connect_to_port,REQ_REP=False)
         
         CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
         	"bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
@@ -146,9 +182,10 @@ class client:
         	CONSIDER)))
         #it=0
         while self.continue_procesing:
-            (info, frame) = imageHub.recv_image()
-            #imageHub.send_reply(b'OK')
-            #print("\n"+info)
+            if len(self.recv_buffer)==0:
+                continue
+            (info,frame) = self.recv_buffer[0]
+            self.recv_buffer.pop(0)
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
@@ -157,11 +194,10 @@ class client:
                     print("frame not mine.")
                 else:
                     if frame_number == self.curr_frame+1:
-                        #print(frame_number)
                         self.out.write(frame)
                         self.curr_frame+=1
                         if self.final_sent_frame==frame_number:
-                            print("time taken for the job = ",time.time()-self.start_time)
+                            print("final frame time taken for the job = ",time.time()-self.start_time)
                             if self.out!=None:
                                 self.out.release()
                     elif frame_number>self.curr_frame:
@@ -176,7 +212,7 @@ class client:
                                 self.curr_frame+=1
                                 self.frame_buffer.remove((number,frame_i))
                                 if self.final_sent_frame==number:
-                                    print("time taken for the job = ",time.time()-self.start_time)
+                                    print("final frame time taken for the job = ",time.time()-self.start_time)
                                     if self.out!=None:
                                         self.out.release()
                                 written = True
@@ -227,10 +263,7 @@ class client:
             	
                 #frameDict[rpiName] = frame
             	
-                if self.sender!=None:
-                    self.sender.send_image(rpiName+"||processed||"+str(frame_number), frame)
-                else:
-                    print("sender is None")
+                self.send_buffer.append((rpiName+"||processed||"+str(frame_number), frame))
                 
                 if (datetime.now() - lastActiveCheck).seconds > ACTIVE_CHECK_SECONDS:
             		
@@ -244,8 +277,6 @@ class client:
                     lastActiveCheck = datetime.now()
 
         cv2.destroyAllWindows()
-        #imageHub.close_socket()
-        del imageHub
     
     def become_requester(self,path):
         i=0
@@ -261,7 +292,6 @@ class client:
                 data = data.decode('utf-8')
                 if data=="ok":
                     break
-        self.final_sent_frame = 0
         self.continue_requesting = True
         request = threading.Thread(target=self.requester,args=[path])
         request.start()
@@ -281,8 +311,6 @@ class client:
                 if data=="ok":
                     break
         self.continue_requesting = False
-        #if self.out!=None:
-        #    self.out.release()
         
     def exit_threads(self):
         i=0
@@ -301,7 +329,7 @@ class client:
         self.continue_requesting = False
         self.continue_procesing = False
         self.continue_sending = False
-        #self.sender.close_socket()
+        self.continue_receiving = False
         if self.out!=None:
             self.out.release()
         

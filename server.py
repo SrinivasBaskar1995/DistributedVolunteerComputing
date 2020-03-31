@@ -1,5 +1,3 @@
-# import the necessary packages
-from datetime import datetime
 import imagezmq
 import threading
 import socket
@@ -22,8 +20,6 @@ class coordinator:
     port_to_client = {}
     requests = []
     
-    req_rep = False
-    
     def __init__(self):        
         self.continue_listening = True
         client_manager = threading.Thread(target=self.manager)
@@ -34,57 +30,19 @@ class coordinator:
         request_thread.start()
         
     def server(self,ip,port):
-        print('sub to : '+ip+':'+port)
-        imageHub = imagezmq.ImageHub(open_port='tcp://'+str(ip)+':'+str(port),REQ_REP=False)
-        
-        frameDict = {}
-        
-        lastActive = {}
-        lastActiveCheck = datetime.now()
-        
-        ESTIMATED_NUM_PIS = 4
-        ACTIVE_CHECK_PERIOD = 10
-        ACTIVE_CHECK_SECONDS = ESTIMATED_NUM_PIS * ACTIVE_CHECK_PERIOD
-        
-        #iterations=0
-        
+        print('receiving at : '+'tcp://'+ip+':'+str(port))
+        imageHub = imagezmq.ImageHub(open_port='tcp://*'+':'+str(port))
         while port in self.continue_server.keys() and self.continue_server[port]:
             (info, frame) = imageHub.recv_image()
             
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
-            frame_number = int(info.split("||")[2])
-            #imageHub.send_reply(b'OK')
-        	
-            if rpiName not in lastActive.keys():
-                print("[INFO] receiving data from {}...".format(rpiName))
-        	
-            lastActive[rpiName] = datetime.now()
-        	
-            frameDict[rpiName] = frame
-         
-            if (datetime.now() - lastActiveCheck).seconds > ACTIVE_CHECK_SECONDS:
-        		
-                for (rpiName, ts) in list(lastActive.items()):
-        			
-                    if (datetime.now() - ts).seconds > ACTIVE_CHECK_SECONDS:
-                        print("[INFO] lost connection to {}".format(rpiName))
-                        lastActive.pop(rpiName)
-                        frameDict.pop(rpiName)
-        		
-                lastActiveCheck = datetime.now()
             
             if command=="request":
-                #print("\n"+info)
                 self.requests.append((info, frame))
-                #if len(self.clients)>0:
-                #    print("sending to.",self.clients[iterations%len(self.clients)])
-                #    if self.clients[iterations%len(self.clients)]==rpiName:
-                #        iterations+=1
-                #    self.senders[self.clients[iterations%len(self.clients)]].send_image(info, frame)
-                #    iterations+=1
             elif command=="processed":
                 self.client_result[rpiName].append((info, frame))
+            imageHub.send_reply(b'OK')
         
         #imageHub.close_socket()
         del imageHub
@@ -92,11 +50,10 @@ class coordinator:
     def send_reply(self,rpiName):
         while rpiName in self.continue_send_reply.keys() and self.continue_send_reply[rpiName]:
             if len(self.client_result[rpiName])>0:
-                #print("sending to.",rpiName)
                 info, frame = self.client_result[rpiName][0]
                 self.client_result[rpiName].pop(0)
                 self.senders[rpiName].send_image(info, frame)
-				time.sleep(0.05)
+                time.sleep(0.05)
                 
     def send_request(self):
         iterations=0
@@ -112,9 +69,6 @@ class coordinator:
                 if iterations%len(clients)==0:
                     time.sleep(0.08)
                 if len(clients)>0:
-                    #print("sending to.",self.clients[iterations%len(self.clients)])
-                    #if self.clients[iterations%len(self.clients)]==rpiName:
-                    #    iterations+=1
                     self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                     iterations+=1
         
@@ -131,16 +85,15 @@ class coordinator:
                 message = message.decode('utf-8')
                 if "join" in message:
                     address = message.split("||")[1]
-                    #print("tcp://"+address.split(":")[0]+":"+address.split(":")[1])
                     self.clients.append(address)
                     available_port = self.my_ports[0]
                     self.port_to_client[address] = available_port
                     self.my_ports.pop(0)
-                    print("pub to : "+"tcp://*"+":"+str(available_port))
-                    sender = imagezmq.ImageSender(connect_to="tcp://*"+":"+str(available_port),REQ_REP=False)
+                    print("sending to : "+"tcp://"+address.split(":")[0]+":"+address.split(":")[1])
+                    sender = imagezmq.ImageSender(connect_to="tcp://"+address.split(":")[0]+":"+address.split(":")[1])
                     self.senders[address] = sender
-                    self.continue_server[address.split(":")[1]] = True
-                    processing = threading.Thread(target=self.server,args=[address.split(":")[0],address.split(":")[1]])
+                    self.continue_server[available_port] = True
+                    processing = threading.Thread(target=self.server,args=['',available_port])
                     processing.start()
                     sock.sendto(("ok||"+str(available_port)).encode('utf-8'),client_address)
                     
