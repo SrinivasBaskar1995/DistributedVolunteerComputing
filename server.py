@@ -2,9 +2,11 @@ import imagezmq
 import threading
 import socket
 import time
+import sys
 
 class coordinator:
     
+    req_rep = False
     my_ip = 'localhost:9999'
     
     continue_server = {}
@@ -20,7 +22,8 @@ class coordinator:
     port_to_client = {}
     requests = []
     
-    def __init__(self):        
+    def __init__(self,ip='localhost'):
+        self.my_ip = ip+":9999"
         self.continue_listening = True
         client_manager = threading.Thread(target=self.manager)
         client_manager.start()
@@ -30,8 +33,12 @@ class coordinator:
         request_thread.start()
         
     def server(self,ip,port):
-        print('receiving at : '+'tcp://'+ip+':'+str(port))
-        imageHub = imagezmq.ImageHub(open_port='tcp://*'+':'+str(port))
+        if self.req_rep:
+            print('receiving at : '+'tcp://*'+':'+str(port))
+            imageHub = imagezmq.ImageHub(open_port='tcp://*'+':'+str(port))
+        else:
+            print('receiving at : '+'tcp://'+ip+':'+str(port))
+            imageHub = imagezmq.ImageHub(open_port='tcp://'+ip+':'+str(port),REQ_REP=False)
         while port in self.continue_server.keys() and self.continue_server[port]:
             (info, frame) = imageHub.recv_image()
             
@@ -42,7 +49,8 @@ class coordinator:
                 self.requests.append((info, frame))
             elif command=="processed":
                 self.client_result[rpiName].append((info, frame))
-            imageHub.send_reply(b'OK')
+            if self.req_rep:
+                imageHub.send_reply(b'OK')
         
         #imageHub.close_socket()
         del imageHub
@@ -67,7 +75,7 @@ class coordinator:
                     if client!=rpiName:
                         clients.append(client)
                 if iterations%len(clients)==0:
-                    time.sleep(0.08)
+                    time.sleep(0.8)
                 if len(clients)>0:
                     self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                     iterations+=1
@@ -89,12 +97,20 @@ class coordinator:
                     available_port = self.my_ports[0]
                     self.port_to_client[address] = available_port
                     self.my_ports.pop(0)
-                    print("sending to : "+"tcp://"+address.split(":")[0]+":"+address.split(":")[1])
-                    sender = imagezmq.ImageSender(connect_to="tcp://"+address.split(":")[0]+":"+address.split(":")[1])
-                    self.senders[address] = sender
-                    self.continue_server[available_port] = True
-                    processing = threading.Thread(target=self.server,args=['',available_port])
-                    processing.start()
+                    if self.req_rep:
+                        print("sending to : "+"tcp://"+address.split(":")[0]+":"+address.split(":")[1])
+                        sender = imagezmq.ImageSender(connect_to="tcp://"+address.split(":")[0]+":"+address.split(":")[1])
+                        self.senders[address] = sender
+                        self.continue_server[available_port] = True
+                        processing = threading.Thread(target=self.server,args=['',available_port])
+                        processing.start()
+                    else:
+                        print("sending to : "+"tcp://*"+":"+str(available_port))
+                        sender = imagezmq.ImageSender(connect_to="tcp://*"+":"+str(available_port),REQ_REP=False)
+                        self.senders[address] = sender
+                        self.continue_server[address.split(":")[1]] = True
+                        processing = threading.Thread(target=self.server,args=[address.split(":")[0],address.split(":")[1]])
+                        processing.start()
                     sock.sendto(("ok||"+str(available_port)).encode('utf-8'),client_address)
                     
                 elif "request" in message:
@@ -138,7 +154,10 @@ class coordinator:
         self.continue_send_request = False
             
 if __name__=='__main__':
-    c = coordinator()
+    if len(sys.argv)>1:
+        c = coordinator(sys.argv[1])
+    else:
+        c = coordinator()
     while True:
         a = input("\nEnter quit to exit\n")
         if a=="quit":

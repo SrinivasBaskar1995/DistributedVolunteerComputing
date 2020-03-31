@@ -8,9 +8,11 @@ import select
 import time
 import threading
 from PIL import Image
+import sys
 
 class client:
     
+    req_rep = False
     number_of_frames_in_chunck = 10
     continue_requesting = False
     continue_procesing = False
@@ -18,7 +20,8 @@ class client:
     continue_receiving = False
     send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_address = ('localhost', 9999)
-    my_ip = 'localhost:5554'
+    my_ip = ''
+    my_port = '5554'
     sender = None
     
     out = None
@@ -35,7 +38,9 @@ class client:
     
     start_time = 0
     
-    def __init__(self):        
+    def __init__(self,server_ip='localhost',own_ip='localhost'):
+        self.server_address = (server_ip,9999)
+        self.my_ip = own_ip+":"+self.my_port
         i=0
         while True:
             # Send data
@@ -49,8 +54,12 @@ class client:
                 data = data.decode('utf-8')
                 if "ok" in data:
                     self.connect_to_port = data.split("||")[1]
-                    print("sending to : "+"tcp://*"+":"+self.my_ip.split(":")[1])
-                    self.sender = imagezmq.ImageSender(connect_to="tcp://"+self.server_address[0]+":"+self.connect_to_port)
+                    if self.req_rep:
+                        print("sending to : "+"tcp://*"+":"+self.my_ip.split(":")[1])
+                        self.sender = imagezmq.ImageSender(connect_to="tcp://"+self.server_address[0]+":"+self.connect_to_port)
+                    else:
+                        print("sending to : "+"tcp://*"+":"+self.my_ip.split(":")[1])
+                        self.sender = imagezmq.ImageSender(connect_to="tcp://*"+":"+self.my_ip.split(":")[1],REQ_REP=False)
                     break
                 
         self.continue_procesing = True
@@ -107,12 +116,13 @@ class client:
         if not ret:
             self.stop_requesting_thread()
         self.final_sent_frame=frame_number-1
+        self.final_sent_frame-=self.final_sent_frame%10
         print("final frame sent : "+str(self.final_sent_frame)+"\n")
         vs.release()
         
     def send_image_thread(self):
         while self.continue_sending:
-            if len(self.send_buffer)>0:#=self.number_of_frames_in_chunck:
+            if len(self.send_buffer)>=self.number_of_frames_in_chunck:
                 msg,frame = self.send_buffer[0]
                 parts = msg.split("||")
                 new_msg = parts[0]+"||"+parts[1]+"||"
@@ -137,12 +147,16 @@ class client:
                 new_msg+="||"+str(height)+"||"+str(width)
                 chunck = np.asarray(dst)
                 self.sender.send_image(new_msg,chunck)
-                time.sleep(1)
+                time.sleep(0.05)
         #self.sender.close_socket()
                 
     def recv_image_thread(self):
-        print('receiving at : '+'tcp://'+self.server_address[0]+':'+self.connect_to_port)
-        imageHub = imagezmq.ImageHub(open_port='tcp://*'+':'+self.my_ip.split(":")[1])
+        if self.req_rep:
+            print('receiving at : '+'tcp://*'+':'+self.my_ip.split(":")[1])
+            imageHub = imagezmq.ImageHub(open_port='tcp://*'+':'+self.my_ip.split(":")[1])
+        else:
+            print('receiving at : '+'tcp://'+self.server_address[0]+':'+self.connect_to_port)
+            imageHub = imagezmq.ImageHub(open_port='tcp://'+self.server_address[0]+':'+self.connect_to_port,REQ_REP=False)
         while self.continue_receiving:
             (info, frame) = imageHub.recv_image()
             data = info.split("||")
@@ -151,7 +165,8 @@ class client:
                 crop_img = frame[0:int(data[3]), i*int(data[4]):(i+1)*int(data[4])]
                 new_info = data[0]+"||"+data[1]+"||"+frames[i]
                 self.recv_buffer.append((new_info, crop_img))
-            imageHub.send_reply(b'OK')
+            if self.req_rep:
+                imageHub.send_reply(b'OK')
         #imageHub.close_socket()
         del imageHub
         
@@ -334,7 +349,11 @@ class client:
             self.out.release()
         
 if __name__=='__main__':
-    w = client()
+    if len(sys.argv)>1:
+        w = client(sys.argv[1],sys.argv[2])
+    else:
+        w = client()
+    
     while True:
         a = input("\nEnter request to become requester or end to stop requesting or quit to exit\n")
         if "request" in a:
