@@ -1,4 +1,3 @@
-from datetime import datetime
 import numpy as np
 import imagezmq
 import imutils
@@ -113,7 +112,8 @@ class client:
             ret, frame = vs.read()
             while len(self.send_buffer)>self.max_buffer:
                 time.sleep(0.1)
-            time.sleep(0.02)
+            if not self.req_rep:
+                time.sleep(0.05)
             
         if not ret:
             self.stop_requesting_thread()
@@ -149,7 +149,6 @@ class client:
                 new_msg+="||"+str(height)+"||"+str(width)
                 chunk = np.asarray(dst)
                 self.sender.send_image(new_msg,chunk)
-                time.sleep(0.05)
         #self.sender.close_socket()
                 
     def recv_image_thread(self):
@@ -188,18 +187,9 @@ class client:
         
         CONSIDER = set(["person"])
         objCount = {obj: 0 for obj in CONSIDER}
-        frameDict = {}
-        
-        lastActive = {}
-        lastActiveCheck = datetime.now()
-        
-        ESTIMATED_NUM_PIS = 4
-        ACTIVE_CHECK_PERIOD = 10
-        ACTIVE_CHECK_SECONDS = ESTIMATED_NUM_PIS * ACTIVE_CHECK_PERIOD
         
         print("[INFO] detecting: {}...".format(", ".join(obj for obj in
         	CONSIDER)))
-        #it=0
         while self.continue_procesing:
             if len(self.recv_buffer)==0:
                 continue
@@ -226,7 +216,6 @@ class client:
                         written = False
                         for (number,frame_i) in self.frame_buffer:
                             if number == self.curr_frame+1:
-                                #print(number)
                                 self.out.write(frame_i)
                                 self.curr_frame+=1
                                 self.frame_buffer.remove((number,frame_i))
@@ -239,11 +228,6 @@ class client:
                             break
                     
             elif command=="request":
-            	
-                if rpiName not in lastActive.keys():
-                    print("[INFO] receiving data from {}...".format(rpiName))
-            	
-                lastActive[rpiName] = datetime.now()
                 
                 frame = imutils.resize(frame, width=400)
                 (h, w) = frame.shape[:2]
@@ -280,22 +264,9 @@ class client:
                 cv2.putText(frame, label, (10, h - 20),
             		cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255,0), 2)
             	
-                #frameDict[rpiName] = frame
-            	
                 while self.req_rep and len(self.send_buffer)>self.max_buffer:
                     time.sleep(0.1)
                 self.send_buffer.append((rpiName+"||processed||"+str(frame_number), frame))
-                
-                if (datetime.now() - lastActiveCheck).seconds > ACTIVE_CHECK_SECONDS:
-            		
-                    for (rpiName, ts) in list(lastActive.items()):
-            			
-                        if (datetime.now() - ts).seconds > ACTIVE_CHECK_SECONDS:
-                            print("[INFO] lost connection to {}".format(rpiName))
-                            lastActive.pop(rpiName)
-                            frameDict.pop(rpiName)
-            		
-                    lastActiveCheck = datetime.now()
 
         cv2.destroyAllWindows()
     

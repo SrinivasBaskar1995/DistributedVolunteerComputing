@@ -8,7 +8,7 @@ class coordinator:
     
     req_rep = True
     my_ip = 'localhost:9999'
-    max_buffer = 4000
+    max_buffer = 40
     continue_server = {}
     continue_listening = False
     continue_send_request = False
@@ -41,7 +41,6 @@ class coordinator:
             imageHub = imagezmq.ImageHub(open_port='tcp://'+ip+':'+str(port),REQ_REP=False)
         while port in self.continue_server.keys() and self.continue_server[port]:
             (info, frame) = imageHub.recv_image()
-            
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             
@@ -78,8 +77,6 @@ class coordinator:
                 for client in self.clients:
                     if client!=rpiName:
                         clients.append(client)
-                #if iterations%len(clients)==0:
-                    #time.sleep(0.8)
                 if len(clients)>0:
                     self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                     iterations+=1
@@ -130,7 +127,6 @@ class coordinator:
                 elif "stop" in message:
                     address = message.split("||")[1]
                     self.clients.append(address)
-                    #self.continue_send_reply.pop(address,None)
                     sock.sendto("ok".encode('utf-8'),client_address)
                     
                 elif "end" in message:
