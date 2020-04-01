@@ -11,6 +11,7 @@ import sys
 
 class client:
     
+    verbose = False
     req_rep = True
     number_of_frames_in_chunk = 100
     max_buffer = 4000
@@ -195,6 +196,8 @@ class client:
                 continue
             (info,frame) = self.recv_buffer[0]
             self.recv_buffer.pop(0)
+            if self.verbose:
+                print(info)
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
@@ -205,8 +208,10 @@ class client:
                     if frame_number == self.curr_frame+1:
                         self.out.write(frame)
                         self.curr_frame+=1
+                        if self.verbose:
+                            print("processed frame : "+str(frame_number))
                         if self.final_sent_frame==frame_number:
-                            print("final frame time taken for the job = ",time.time()-self.start_time)
+                            print("final frame time taken for the job = "+str(time.time()-self.start_time))
                             if self.out!=None:
                                 self.out.release()
                     elif frame_number>self.curr_frame:
@@ -218,9 +223,11 @@ class client:
                             if number == self.curr_frame+1:
                                 self.out.write(frame_i)
                                 self.curr_frame+=1
+                                if self.verbose:
+                                    print("processed frame : "+str(number))
                                 self.frame_buffer.remove((number,frame_i))
                                 if self.final_sent_frame==number:
-                                    print("final frame time taken for the job = ",time.time()-self.start_time)
+                                    print("final frame time taken for the job = "+str(time.time()-self.start_time))
                                     if self.out!=None:
                                         self.out.release()
                                 written = True

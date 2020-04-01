@@ -6,6 +6,7 @@ import sys
 
 class coordinator:
     
+    verbose = False
     req_rep = True
     my_ip = 'localhost:9999'
     max_buffer = 40
@@ -41,6 +42,8 @@ class coordinator:
             imageHub = imagezmq.ImageHub(open_port='tcp://'+ip+':'+str(port),REQ_REP=False)
         while port in self.continue_server.keys() and self.continue_server[port]:
             (info, frame) = imageHub.recv_image()
+            if self.verbose:
+                print(info)
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             
