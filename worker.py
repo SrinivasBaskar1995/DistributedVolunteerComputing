@@ -39,6 +39,10 @@ class client:
     
     start_time = 0
     
+    def log(self,message):
+        if self.verbose:
+            print(message)
+    
     def __init__(self,server_ip='localhost',own_ip='localhost'):
         self.server_address = (server_ip,9999)
         self.my_ip = own_ip+":"+self.my_port
@@ -169,6 +173,7 @@ class client:
                 crop_img = frame[0:int(data[3]), i*int(data[4]):(i+1)*int(data[4])]
                 new_info = data[0]+"||"+data[1]+"||"+frames[i]
                 self.recv_buffer.append((new_info, crop_img))
+                self.log(new_info)
             if self.req_rep:
                 imageHub.send_reply(b'OK')
         #imageHub.close_socket()
@@ -196,8 +201,6 @@ class client:
                 continue
             (info,frame) = self.recv_buffer[0]
             self.recv_buffer.pop(0)
-            if self.verbose:
-                print(info)
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
@@ -208,8 +211,7 @@ class client:
                     if frame_number == self.curr_frame+1:
                         self.out.write(frame)
                         self.curr_frame+=1
-                        if self.verbose:
-                            print("processed frame : "+str(frame_number))
+                        self.log("processed frame : "+str(frame_number))
                         if self.final_sent_frame==frame_number:
                             print("final frame time taken for the job = "+str(time.time()-self.start_time))
                             if self.out!=None:
@@ -223,8 +225,7 @@ class client:
                             if number == self.curr_frame+1:
                                 self.out.write(frame_i)
                                 self.curr_frame+=1
-                                if self.verbose:
-                                    print("processed frame : "+str(number))
+                                self.log("processed frame : "+str(number))
                                 self.frame_buffer.remove((number,frame_i))
                                 if self.final_sent_frame==number:
                                     print("final frame time taken for the job = "+str(time.time()-self.start_time))

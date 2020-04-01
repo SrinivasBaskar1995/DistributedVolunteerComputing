@@ -23,6 +23,10 @@ class coordinator:
     port_to_client = {}
     requests = []
     
+    def log(self,message):
+        if self.verbose:
+            print(message)
+    
     def __init__(self,ip='localhost'):
         self.my_ip = ip+":9999"
         self.continue_listening = True
@@ -42,8 +46,7 @@ class coordinator:
             imageHub = imagezmq.ImageHub(open_port='tcp://'+ip+':'+str(port),REQ_REP=False)
         while port in self.continue_server.keys() and self.continue_server[port]:
             (info, frame) = imageHub.recv_image()
-            if self.verbose:
-                print(info)
+            self.log(info)
             rpiName = info.split("||")[0]
             command = info.split("||")[1]
             
