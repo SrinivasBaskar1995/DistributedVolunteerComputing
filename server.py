@@ -63,6 +63,7 @@ class coordinator:
         
         #imageHub.close_socket()
         del imageHub
+        print("server terminated.")
         
     def send_reply(self,rpiName):
         while rpiName in self.continue_send_reply.keys() and self.continue_send_reply[rpiName]:
@@ -71,6 +72,7 @@ class coordinator:
                 self.client_result[rpiName].pop(0)
                 self.senders[rpiName].send_image(info, frame)
                 #time.sleep(0.05)
+        print("send_reply terminated.")
                 
     def send_request(self):
         iterations=0
@@ -86,6 +88,7 @@ class coordinator:
                 if len(clients)>0:
                     self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                     iterations+=1
+        print("send_request terminated.")
         
     def manager(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -151,7 +154,7 @@ class coordinator:
                     sock.sendto("ok".encode('utf-8'),client_address)
             except socket.timeout:
                 continue
-        
+        print("manager terminated.")
         sock.close()
             
     def exit_threads(self):

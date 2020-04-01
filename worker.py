@@ -126,6 +126,7 @@ class client:
         self.final_sent_frame-=self.final_sent_frame%self.number_of_frames_in_chunk
         print("final frame sent : "+str(self.final_sent_frame)+"\n")
         vs.release()
+        print("requester terminated.")
         
     def send_image_thread(self):
         while self.continue_sending:
@@ -155,6 +156,7 @@ class client:
                 chunk = np.asarray(dst)
                 self.sender.send_image(new_msg,chunk)
         #self.sender.close_socket()
+        print("send_image_thread terminated.")
                 
     def recv_image_thread(self):
         if self.req_rep:
@@ -178,6 +180,7 @@ class client:
                 imageHub.send_reply(b'OK')
         #imageHub.close_socket()
         del imageHub
+        print("recv_image_thread terminated.")
         
     def worker(self):
         args = {"prototxt":"MobileNetSSD_deploy.prototxt.txt","model":"MobileNetSSD_deploy.caffemodel","montageW":2,"montageH":2,"confidence":0.2}
@@ -277,6 +280,7 @@ class client:
                 self.send_buffer.append((rpiName+"||processed||"+str(frame_number), frame))
 
         cv2.destroyAllWindows()
+        print("worker terminated.")
     
     def become_requester(self,path):
         i=0
