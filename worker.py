@@ -31,7 +31,7 @@ class Patience:
 
 class client:
     
-    verbose = False
+    verbose = True
     req_rep = True
     number_of_frames_in_chunk = 100
     max_buffer = 4000
@@ -39,6 +39,7 @@ class client:
     continue_procesing = False
     continue_sending = False
     continue_receiving = False
+    continue_pinging = False
     send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_address = ('localhost', 9999)
     my_ip = ''
@@ -99,6 +100,11 @@ class client:
         self.continue_receiving = True
         recv_image_thread = threading.Thread(target=self.recv_image_thread)
         recv_image_thread.start()
+
+        self.continue_pinging = True
+        ping_server_thread = threading.Thread(target=self.ping_server)
+        ping_server_thread.start()
+
 
     def requester(self,path):
         
@@ -376,8 +382,15 @@ class client:
         self.continue_procesing = False
         self.continue_sending = False
         self.continue_receiving = False
+        self.continue_pinging = False
         if self.out!=None:
             self.out.release()
+
+    def ping_server(self):
+        while True:
+            self.send_sock.sendto(("ping||"+self.my_ip).encode('utf-8'), self.server_address)
+            time.sleep(2)
+
         
 if __name__=='__main__':
     if len(sys.argv)>1:

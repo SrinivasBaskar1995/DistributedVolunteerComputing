@@ -26,7 +26,7 @@ class Patience:
 
 class coordinator:
     
-    verbose = False
+    verbose = True
     req_rep = True
     my_ip = 'localhost:9999'
     max_buffer = 4000
@@ -229,6 +229,11 @@ class coordinator:
                         #self.senders[address].close_socket()
                         del self.senders[address]
                     sock.sendto("ok".encode('utf-8'),client_address)
+
+                elif "ping" in message:
+                    address = message.split("||")[1]
+                    client_time[address]=time.time()
+
             except socket.timeout:
                 continue
         print("manager terminated.")
