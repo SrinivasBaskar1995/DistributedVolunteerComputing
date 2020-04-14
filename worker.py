@@ -8,6 +8,26 @@ import time
 import threading
 from PIL import Image
 import sys
+import signal
+
+class Patience:
+    class Timeout(Exception):
+        pass
+
+    def __init__(self, seconds):
+        self.seconds = seconds
+
+    def __enter__(self):
+        if hasattr(signal, "SIGALRM"):
+            signal.signal(signal.SIGALRM, self.raise_timeout)
+            signal.alarm(self.seconds)
+
+    def __exit__(self, *args):
+        if hasattr(signal, "alarm"):
+            signal.alarm(0)
+
+    def raise_timeout(self, *args):
+        raise Patience.Timeout()
 
 class client:
     
@@ -24,6 +44,7 @@ class client:
     my_ip = ''
     my_port = '5554'
     sender = None
+    timeout=10
     
     out = None
     path_out_num=0
@@ -130,7 +151,7 @@ class client:
         
     def send_image_thread(self):
         while self.continue_sending:
-            if len(self.send_buffer)>=self.number_of_frames_in_chunk:
+            if len(self.send_buffer)>0:#=self.number_of_frames_in_chunk:
                 msg,frame = self.send_buffer[0]
                 parts = msg.split("||")
                 new_msg = parts[0]+"||"+parts[1]+"||"
@@ -140,21 +161,37 @@ class client:
                 rpiName = parts[0]
                 dst = Image.new('RGB', (self.number_of_frames_in_chunk*width, height))
                 index=0
-                for i in range(self.number_of_frames_in_chunk):
+                frames = []
+                i=0
+                iterations=0
+                while i < self.number_of_frames_in_chunk:
+                    iterations+=1
                     if index>=len(self.send_buffer):
-                        break
+                        if iterations>100:
+                            break
+                        else:
+                            continue
+                    iterations=0
                     msg,frame = self.send_buffer[index]
                     if msg.split("||")[0]==rpiName and msg.split("||")[1]==command and frame.shape[0]==height and frame.shape[1]==width:
-                        new_msg+=msg.split("||")[2]+"-"
+                        frames.append(msg.split("||")[2])
                         im_pil = Image.fromarray(frame)
                         dst.paste(im_pil, (i*width, 0))
                         self.send_buffer.pop(index)
+                        i+=1
                     else:
                         index+=1
-                new_msg = new_msg[:len(new_msg)-1]
+                new_msg += "-".join(frames)
                 new_msg+="||"+str(height)+"||"+str(width)
                 chunk = np.asarray(dst)
-                self.sender.send_image(new_msg,chunk)
+                timed_out = True
+                while self.continue_sending and timed_out:
+                    try:
+                        with Patience(self.timeout):
+                            self.sender.send_image(new_msg,chunk)
+                            timed_out = False
+                    except Patience.Timeout:
+                        print("timeout")
         #self.sender.close_socket()
         print("send_image_thread terminated.")
                 
@@ -168,7 +205,12 @@ class client:
         while self.continue_receiving:
             while self.req_rep and len(self.recv_buffer)>self.max_buffer:
                 time.sleep(0.1)
-            (info, frame) = imageHub.recv_image()
+            try:
+                with Patience(self.timeout):
+                    (info, frame) = imageHub.recv_image()
+            except Patience.Timeout:
+                print("timeout")
+                continue
             data = info.split("||")
             frames = data[2].split("-")
             for i in range(len(frames)):
@@ -204,7 +246,7 @@ class client:
                 continue
             (info,frame) = self.recv_buffer[0]
             self.recv_buffer.pop(0)
-            rpiName = info.split("||")[0]
+            rpiName = info.split("||")[0].split("-")[0]
             command = info.split("||")[1]
             frame_number = int(info.split("||")[2])
             if command=="processed":                
@@ -277,7 +319,7 @@ class client:
             	
                 while self.req_rep and len(self.send_buffer)>self.max_buffer:
                     time.sleep(0.1)
-                self.send_buffer.append((rpiName+"||processed||"+str(frame_number), frame))
+                self.send_buffer.append((rpiName+"-"+self.my_ip+"||processed||"+str(frame_number), frame))
 
         cv2.destroyAllWindows()
         print("worker terminated.")
