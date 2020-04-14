@@ -26,7 +26,7 @@ class Patience:
 
 class coordinator:
     
-    verbose = True
+    verbose = False
     req_rep = True
     my_ip = 'localhost:9999'
     max_buffer = 4000
@@ -128,12 +128,13 @@ class coordinator:
                             if client!=rpiName:
                                 clients.append(client)
                         if len(clients)>0:
-                            self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                             if clients[iterations%len(clients)] not in self.client_sent.keys():
                                 self.client_sent[clients[iterations%len(clients)]] = []
-                            self.client_sent[clients[iterations%len(clients)]].append((info, frame))
-                            self.requests.pop(0)
-                            iterations+=1
+                            if len(self.client_sent[clients[iterations%len(clients)]])<10000:
+                                self.senders[clients[iterations%len(clients)]].send_image(info, frame)
+                                self.client_sent[clients[iterations%len(clients)]].append((info, frame))
+                                self.requests.pop(0)
+                                iterations+=1
             except Patience.Timeout:
                 print("timeout")
         print("send_request terminated.")
@@ -145,20 +146,38 @@ class coordinator:
                 if time.time()-self.client_time[client]>self.timeout:
                     failed.append(client)
             for client in failed:
+                self.log("failed : "+client)
                 del self.client_time[client]
                 self.client_failed(client)
         
     def client_failed(self,client_add):
-        for info,frame in self.client_sent[client_add]:
-            while self.req_rep and len(self.requests)>self.max_buffer/self.number_of_frames_in_chunk:
-                time.sleep(0.1)
-            self.requests.append((info, frame))
+        if client_add in self.client_sent.keys():
+            for info,frame in self.client_sent[client_add]:
+                while self.req_rep and len(self.requests)>self.max_buffer/self.number_of_frames_in_chunk:
+                    time.sleep(0.1)
+                self.requests.append((info, frame))
         
-        del self.client_sent[client_add]
-        port = self.port_to_client[client_add]
-        del self.port_to_client[client_add]
-        self.continue_server.pop(port,None)
-        self.my_ports.append(port)
+        if client_add in self.client_sent.keys():
+            del self.client_sent[client_add]
+            
+        if client_add in self.continue_send_reply.keys():
+            del self.continue_send_reply[client_add]
+            
+        remove_messages = []
+        for info,frame in self.requests:
+            if info.split("||")[0]==client_add:
+                remove_messages.append((info,frame))
+        
+        for info,frame in remove_messages:
+            self.requests.remove((info,frame))
+        
+        if client_add in self.port_to_client.keys():
+            port = self.port_to_client[client_add]
+            del self.port_to_client[client_add]
+            if port in self.continue_server.keys():
+                self.continue_server.pop(port,None)
+            if port not in self.my_ports:
+                self.my_ports.append(port)
         if client_add in self.continue_send_reply.keys():
             self.continue_send_reply.pop(client_add,None)
         if client_add in self.clients:
@@ -232,7 +251,8 @@ class coordinator:
 
                 elif "ping" in message:
                     address = message.split("||")[1]
-                    client_time[address]=time.time()
+                    self.log("ping from : "+address)
+                    self.client_time[address]=time.time()
 
             except socket.timeout:
                 continue

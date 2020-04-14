@@ -387,7 +387,7 @@ class client:
             self.out.release()
 
     def ping_server(self):
-        while True:
+        while self.continue_pinging:
             self.send_sock.sendto(("ping||"+self.my_ip).encode('utf-8'), self.server_address)
             time.sleep(2)
 
