@@ -9,6 +9,7 @@ import threading
 from PIL import Image
 import sys
 import signal
+import psutil
 
 class Patience:
     class Timeout(Exception):
@@ -31,7 +32,7 @@ class Patience:
 
 class client:
     
-    verbose = True
+    verbose = False
     req_rep = True
     number_of_frames_in_chunk = 100
     max_buffer = 4000
@@ -364,6 +365,17 @@ class client:
                     break
         self.continue_requesting = False
         
+    def ping_server(self):
+        while self.continue_pinging:
+            cpu_left = psutil.cpu_times_percent(interval=1, percpu=False)[2]
+            ram_left = psutil.virtual_memory()[1]
+            battery = psutil.sensors_battery()
+            percent=100
+            if battery!=None:
+                percent = str(battery.percent)
+            self.send_sock.sendto(("ping||"+self.my_ip+"||"+str(cpu_left)+"||"+str(ram_left)+"||"+str(percent)).encode('utf-8'), self.server_address)
+            time.sleep(2)
+        
     def exit_threads(self):
         i=0
         while True:
@@ -385,11 +397,6 @@ class client:
         self.continue_pinging = False
         if self.out!=None:
             self.out.release()
-
-    def ping_server(self):
-        while self.continue_pinging:
-            self.send_sock.sendto(("ping||"+self.my_ip).encode('utf-8'), self.server_address)
-            time.sleep(2)
 
         
 if __name__=='__main__':

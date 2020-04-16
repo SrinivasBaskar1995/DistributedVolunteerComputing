@@ -38,7 +38,9 @@ class coordinator:
     continue_send_reply = {}
     client_sent = {}
     client_time = {}
+    client_resources = {}
     timeout = 6
+    minimum_battery = 20
     
     my_ports = [x for x in range(5555,5600)]
     
@@ -130,7 +132,7 @@ class coordinator:
                         if len(clients)>0:
                             if clients[iterations%len(clients)] not in self.client_sent.keys():
                                 self.client_sent[clients[iterations%len(clients)]] = []
-                            if len(self.client_sent[clients[iterations%len(clients)]])<10000:
+                            if len(self.client_sent[clients[iterations%len(clients)]])<self.client_resources[clients[iterations%len(clients)]]:
                                 self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                                 self.client_sent[clients[iterations%len(clients)]].append((info, frame))
                                 self.requests.pop(0)
@@ -247,12 +249,21 @@ class coordinator:
                     if address in self.senders.keys():
                         #self.senders[address].close_socket()
                         del self.senders[address]
+                    if address in self.client_resources:
+                        del self.client_resources[address]
                     sock.sendto("ok".encode('utf-8'),client_address)
 
                 elif "ping" in message:
                     address = message.split("||")[1]
+                    cpu_left = float(message.split("||")[2])
+                    ram_left = float(message.split("||")[3])
+                    battery_percent = float(message.split("||")[4])
                     self.log("ping from : "+address)
                     self.client_time[address]=time.time()
+                    if battery_percent<self.minimum_battery or cpu_left<0 or ram_left<100000000:
+                        self.client_resources[address]=0
+                    else:                        
+                        self.client_resources[address]=10000
 
             except socket.timeout:
                 continue
