@@ -92,7 +92,10 @@ class coordinator:
                 self.requests.append((info, frame))
             elif command=="processed":
                 received_from = rpiName.split("-")[1]
-                while self.req_rep and len(self.client_result)>self.max_buffer/self.number_of_frames_in_chunk:
+                leng=0
+                for key in self.client_result.keys():
+                    leng+=len(self.client_result[key])
+                while self.req_rep and leng>self.max_buffer/self.number_of_frames_in_chunk:
                     time.sleep(0.1)
                 self.client_result[rpiName.split("-")[0]].append((info, frame))
                 if (info, frame) in self.client_sent[received_from]:
@@ -133,6 +136,11 @@ class coordinator:
                             if clients[iterations%len(clients)] not in self.client_sent.keys():
                                 self.client_sent[clients[iterations%len(clients)]] = []
                             if len(self.client_sent[clients[iterations%len(clients)]])<self.client_resources[clients[iterations%len(clients)]]:
+                                leng = 0
+                                for key in self.client_sent.keys():
+                                    leng+=len(self.client_sent[key])
+                                while self.req_rep and leng>self.max_buffer/self.number_of_frames_in_chunk:
+                                    time.sleep(0.01)
                                 self.senders[clients[iterations%len(clients)]].send_image(info, frame)
                                 self.client_sent[clients[iterations%len(clients)]].append((info, frame))
                                 self.requests.pop(0)

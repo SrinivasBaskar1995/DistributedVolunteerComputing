@@ -158,7 +158,7 @@ class client:
         
     def send_image_thread(self):
         while self.continue_sending:
-            if len(self.send_buffer)>0:#=self.number_of_frames_in_chunk:
+            if len(self.send_buffer)>=self.number_of_frames_in_chunk:
                 msg,frame = self.send_buffer[0]
                 parts = msg.split("||")
                 new_msg = parts[0]+"||"+parts[1]+"||"
